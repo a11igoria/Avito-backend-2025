@@ -1,9 +1,9 @@
 package storage
 
 import (
-	"avito-2025/internal/domain"
 	"context"
 	"database/sql"
+	"strconv"
 )
 
 type PRRepository struct {
@@ -14,89 +14,182 @@ func NewPRRepository(db *sql.DB) *PRRepository {
 	return &PRRepository{db: db}
 }
 
-func (r *PRRepository) Create(ctx context.Context, pr *domain.PullRequest) error {
-	query := `INSERT INTO pull_requests (title, author_id, status) 
-              VALUES ($1, $2, $3) RETURNING id, created_at, updated_at`
-	return r.db.QueryRowContext(ctx, query, pr.Title, pr.AuthorID, pr.Status).
-		Scan(&pr.ID, &pr.CreatedAt, &pr.UpdatedAt)
+// Create — создать PR
+func (r *PRRepository) Create(ctx context.Context, prName string, authorID string, status string) (string, error) {
+	var id int
+	query := `INSERT INTO pull_requests (name, author_id, status, created_at) 
+	          VALUES ($1, $2, $3, NOW()) 
+	          RETURNING id`
+
+	err := r.db.QueryRowContext(ctx, query, prName, authorID, status).Scan(&id)
+	if err != nil {
+		return "", err
+	}
+	return strconv.Itoa(id), nil
 }
 
-func (r *PRRepository) GetByID(ctx context.Context, id int) (*domain.PullRequest, error) {
-	var pr domain.PullRequest
-	query := `SELECT id, title, author_id, status, created_at, updated_at FROM pull_requests WHERE id = $1`
-	err := r.db.QueryRowContext(ctx, query, id).
-		Scan(&pr.ID, &pr.Title, &pr.AuthorID, &pr.Status, &pr.CreatedAt, &pr.UpdatedAt)
+// GetByID — получить PR по string ID (конвертирует строку в число для SQL!)
+func (r *PRRepository) GetByID(ctx context.Context, prID string) (map[string]interface{}, error) {
+	// ✅ ВАЖНО: Конвертируем string ID в int для SQL запроса
+	idInt, err := strconv.Atoi(prID)
+	if err != nil {
+		return nil, err
+	}
+
+	var id int
+	var name, authorID, status string
+	var createdAt, updatedAt interface{}
+
+	query := `SELECT id, name, author_id, status, created_at, updated_at 
+	          FROM pull_requests WHERE id = $1`
+
+	err = r.db.QueryRowContext(ctx, query, idInt).
+		Scan(&id, &name, &authorID, &status, &createdAt, &updatedAt)
+
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return &pr, err
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"ID":       strconv.Itoa(id),
+		"Name":     name,
+		"AuthorID": authorID,
+		"Status":   status,
+	}, nil
 }
 
-func (r *PRRepository) UpdateStatus(ctx context.Context, id int, status string) error {
+// UpdateStatus — обновить статус PR
+func (r *PRRepository) UpdateStatus(ctx context.Context, prID string, status string) error {
+	// ✅ ВАЖНО: Конвертируем string ID в int для SQL запроса
+	idInt, err := strconv.Atoi(prID)
+	if err != nil {
+		return err
+	}
+
 	query := `UPDATE pull_requests SET status = $1, updated_at = NOW() WHERE id = $2`
-	_, err := r.db.ExecContext(ctx, query, status, id)
+	_, err = r.db.ExecContext(ctx, query, status, idInt)
 	return err
 }
 
-func (r *PRRepository) Delete(ctx context.Context, id int) error {
+// Delete — удалить PR
+func (r *PRRepository) Delete(ctx context.Context, prID string) error {
+	idInt, err := strconv.Atoi(prID)
+	if err != nil {
+		return err
+	}
+
 	query := `DELETE FROM pull_requests WHERE id = $1`
-	_, err := r.db.ExecContext(ctx, query, id)
+	_, err = r.db.ExecContext(ctx, query, idInt)
 	return err
 }
 
-func (r *PRRepository) List(ctx context.Context) ([]*domain.PullRequest, error) {
-	query := `SELECT id, title, author_id, status, created_at, updated_at FROM pull_requests`
+// List — получить все PR
+func (r *PRRepository) List(ctx context.Context) ([]map[string]interface{}, error) {
+	query := `SELECT id, name, author_id, status, created_at, updated_at 
+	          FROM pull_requests ORDER BY id`
+
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var prs []*domain.PullRequest
+	var prs []map[string]interface{}
 	for rows.Next() {
-		var pr domain.PullRequest
-		if err := rows.Scan(&pr.ID, &pr.Title, &pr.AuthorID, &pr.Status, &pr.CreatedAt, &pr.UpdatedAt); err != nil {
+		var id int
+		var name, authorID, status string
+		var createdAt, updatedAt interface{}
+
+		if err := rows.Scan(&id, &name, &authorID, &status, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
-		prs = append(prs, &pr)
+
+		prs = append(prs, map[string]interface{}{
+			"ID":       strconv.Itoa(id),
+			"Name":     name,
+			"AuthorID": authorID,
+			"Status":   status,
+		})
 	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return prs, nil
 }
 
-func (r *PRRepository) GetByAuthor(ctx context.Context, authorID int) ([]*domain.PullRequest, error) {
-	query := `SELECT id, title, author_id, status, created_at, updated_at FROM pull_requests WHERE author_id = $1`
+// GetByAuthorID — получить все PR автора
+func (r *PRRepository) GetByAuthorID(ctx context.Context, authorID string) ([]map[string]interface{}, error) {
+	query := `SELECT id, name, author_id, status, created_at, updated_at 
+	          FROM pull_requests WHERE author_id = $1 ORDER BY id`
+
 	rows, err := r.db.QueryContext(ctx, query, authorID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var prs []*domain.PullRequest
+	var prs []map[string]interface{}
 	for rows.Next() {
-		var pr domain.PullRequest
-		if err := rows.Scan(&pr.ID, &pr.Title, &pr.AuthorID, &pr.Status, &pr.CreatedAt, &pr.UpdatedAt); err != nil {
+		var id int
+		var name, authorID, status string
+		var createdAt, updatedAt interface{}
+
+		if err := rows.Scan(&id, &name, &authorID, &status, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
-		prs = append(prs, &pr)
+
+		prs = append(prs, map[string]interface{}{
+			"ID":       strconv.Itoa(id),
+			"Name":     name,
+			"AuthorID": authorID,
+			"Status":   status,
+		})
 	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return prs, nil
 }
 
-func (r *PRRepository) GetByStatus(ctx context.Context, status string) ([]*domain.PullRequest, error) {
-	query := `SELECT id, title, author_id, status, created_at, updated_at FROM pull_requests WHERE status = $1`
+// GetByStatus — получить все PR с определенным статусом
+func (r *PRRepository) GetByStatus(ctx context.Context, status string) ([]map[string]interface{}, error) {
+	query := `SELECT id, name, author_id, status, created_at, updated_at 
+	          FROM pull_requests WHERE status = $1 ORDER BY id`
+
 	rows, err := r.db.QueryContext(ctx, query, status)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var prs []*domain.PullRequest
+	var prs []map[string]interface{}
 	for rows.Next() {
-		var pr domain.PullRequest
-		if err := rows.Scan(&pr.ID, &pr.Title, &pr.AuthorID, &pr.Status, &pr.CreatedAt, &pr.UpdatedAt); err != nil {
+		var id int
+		var name, authorID, status string
+		var createdAt, updatedAt interface{}
+
+		if err := rows.Scan(&id, &name, &authorID, &status, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
-		prs = append(prs, &pr)
+
+		prs = append(prs, map[string]interface{}{
+			"ID":       strconv.Itoa(id),
+			"Name":     name,
+			"AuthorID": authorID,
+			"Status":   status,
+		})
 	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return prs, nil
 }

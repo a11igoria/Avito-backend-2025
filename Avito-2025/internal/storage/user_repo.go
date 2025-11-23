@@ -1,9 +1,9 @@
 package storage
 
 import (
-	"avito-2025/internal/domain"
 	"context"
 	"database/sql"
+	"strconv"
 )
 
 type UserRepository struct {
@@ -14,52 +14,95 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
-	query := `INSERT INTO users (username, team_id, is_active, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id`
-	return r.db.QueryRowContext(ctx, query, user.Username, user.TeamID, user.IsActive).Scan(&user.ID)
+// Create — создать пользователя
+func (r *UserRepository) Create(ctx context.Context, username string, teamName string, isActive bool) (string, error) {
+	var id int
+	query := `INSERT INTO users (username, team_name, is_active, created_at) 
+	          VALUES ($1, $2, $3, NOW()) 
+	          RETURNING id`
+
+	err := r.db.QueryRowContext(ctx, query, username, teamName, isActive).Scan(&id)
+	if err != nil {
+		return "", err
+	}
+	return strconv.Itoa(id), nil
 }
 
-func (r *UserRepository) GetByID(ctx context.Context, id int) (*domain.User, error) {
-	var user domain.User
-	query := `SELECT id, username, team_id, is_active, created_at FROM users WHERE id = $1`
-	err := r.db.QueryRowContext(ctx, query, id).Scan(&user.ID, &user.Username, &user.TeamID, &user.IsActive, &user.CreatedAt)
+// GetByID — получить пользователя по string ID
+func (r *UserRepository) GetByID(ctx context.Context, userID string) (map[string]interface{}, error) {
+	var id int
+	var username, teamName string
+	var isActive bool
+	var createdAt interface{}
+
+	query := `SELECT id, username, team_name, is_active, created_at 
+	          FROM users WHERE id = $1`
+
+	err := r.db.QueryRowContext(ctx, query, userID).
+		Scan(&id, &username, &teamName, &isActive, &createdAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil // не найден
-		}
 		return nil, err
 	}
-	return &user, nil
+
+	return map[string]interface{}{
+		"ID":       strconv.Itoa(id),
+		"Username": username,
+		"TeamName": teamName,
+		"IsActive": isActive,
+	}, nil
 }
 
-func (r *UserRepository) GetActiveMembers(ctx context.Context, teamID int) ([]*domain.User, error) {
-	query := `SELECT id, username, team_id, is_active, created_at FROM users WHERE team_id = $1 AND is_active = TRUE`
-	rows, err := r.db.QueryContext(ctx, query, teamID)
+// GetActiveMembers — получить активных членов команды по имени команды
+func (r *UserRepository) GetActiveMembers(ctx context.Context, teamName string) ([]map[string]interface{}, error) {
+	query := `SELECT id, username, team_name, is_active, created_at 
+	          FROM users WHERE team_name = $1 AND is_active = TRUE`
+
+	rows, err := r.db.QueryContext(ctx, query, teamName)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var users []*domain.User
+	var users []map[string]interface{}
 	for rows.Next() {
-		var user domain.User
-		err := rows.Scan(&user.ID, &user.Username, &user.TeamID, &user.IsActive, &user.CreatedAt)
-		if err != nil {
+		var id int
+		var username, teamName string
+		var isActive bool
+		var createdAt interface{}
+
+		if err := rows.Scan(&id, &username, &teamName, &isActive, &createdAt); err != nil {
 			return nil, err
 		}
-		users = append(users, &user)
+
+		users = append(users, map[string]interface{}{
+			"ID":       strconv.Itoa(id),
+			"Username": username,
+			"TeamName": teamName,
+			"IsActive": isActive,
+		})
 	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return users, nil
 }
 
-func (r *UserRepository) Update(ctx context.Context, user *domain.User) error {
-	query := `UPDATE users SET username=$1, is_active=$2 WHERE id=$3`
-	_, err := r.db.ExecContext(ctx, query, user.Username, user.IsActive, user.ID)
+// Update — обновить пользователя
+func (r *UserRepository) Update(ctx context.Context, userID string, username string, isActive bool) error {
+	query := `UPDATE users SET username=$1, is_active=$2, updated_at=NOW() WHERE id=$3`
+	_, err := r.db.ExecContext(ctx, query, username, isActive, userID)
 	return err
 }
 
-func (r *UserRepository) Delete(ctx context.Context, id int) error {
+// Delete — удалить пользователя
+func (r *UserRepository) Delete(ctx context.Context, userID string) error {
 	query := `DELETE FROM users WHERE id=$1`
-	_, err := r.db.ExecContext(ctx, query, id)
+	_, err := r.db.ExecContext(ctx, query, userID)
 	return err
 }

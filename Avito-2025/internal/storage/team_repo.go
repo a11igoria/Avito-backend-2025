@@ -1,9 +1,9 @@
 package storage
 
 import (
-	"avito-2025/internal/domain"
 	"context"
 	"database/sql"
+	"strconv"
 )
 
 type TeamRepository struct {
@@ -14,46 +14,78 @@ func NewTeamRepository(db *sql.DB) *TeamRepository {
 	return &TeamRepository{db: db}
 }
 
-func (r *TeamRepository) Create(ctx context.Context, team *domain.Team) error {
-	query := `INSERT INTO teams (name) VALUES ($1) RETURNING id, created_at`
-	return r.db.QueryRowContext(ctx, query, team.Name).Scan(&team.ID, &team.CreatedAt)
+// Create — создать команду
+func (r *TeamRepository) Create(ctx context.Context, teamName string) error {
+	query := `INSERT INTO teams (name, created_at) VALUES ($1, NOW())`
+	_, err := r.db.ExecContext(ctx, query, teamName)
+	return err
 }
 
-func (r *TeamRepository) GetByID(ctx context.Context, id int) (*domain.Team, error) {
-	var team domain.Team
-	query := `SELECT id, name, created_at FROM teams WHERE id = $1`
-	err := r.db.QueryRowContext(ctx, query, id).Scan(&team.ID, &team.Name, &team.CreatedAt)
+// GetByName — получить команду по имени (string)
+func (r *TeamRepository) GetByName(ctx context.Context, teamName string) (map[string]interface{}, error) {
+	var id int
+	var name string
+	var createdAt interface{}
+
+	query := `SELECT id, name, created_at FROM teams WHERE name = $1`
+	err := r.db.QueryRowContext(ctx, query, teamName).
+		Scan(&id, &name, &createdAt)
+
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return &team, err
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"ID":   strconv.Itoa(id),
+		"Name": name,
+	}, nil
 }
 
-func (r *TeamRepository) List(ctx context.Context) ([]*domain.Team, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id, name, created_at FROM teams`)
+// List — получить все команды
+func (r *TeamRepository) List(ctx context.Context) ([]map[string]interface{}, error) {
+	query := `SELECT id, name, created_at FROM teams ORDER BY id`
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var teams []*domain.Team
+
+	var teams []map[string]interface{}
 	for rows.Next() {
-		var team domain.Team
-		if err := rows.Scan(&team.ID, &team.Name, &team.CreatedAt); err != nil {
+		var id int
+		var name string
+		var createdAt interface{}
+
+		if err := rows.Scan(&id, &name, &createdAt); err != nil {
 			return nil, err
 		}
-		teams = append(teams, &team)
+
+		teams = append(teams, map[string]interface{}{
+			"ID":   strconv.Itoa(id),
+			"Name": name,
+		})
 	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return teams, nil
 }
 
-func (r *TeamRepository) Update(ctx context.Context, team *domain.Team) error {
-	query := `UPDATE teams SET name = $1 WHERE id = $2`
-	_, err := r.db.ExecContext(ctx, query, team.Name, team.ID)
+// Update — обновить команду по имени
+func (r *TeamRepository) Update(ctx context.Context, oldTeamName string, newTeamName string) error {
+	query := `UPDATE teams SET name = $1 WHERE name = $2`
+	_, err := r.db.ExecContext(ctx, query, newTeamName, oldTeamName)
 	return err
 }
 
-func (r *TeamRepository) Delete(ctx context.Context, id int) error {
-	query := `DELETE FROM teams WHERE id = $1`
-	_, err := r.db.ExecContext(ctx, query, id)
+// Delete — удалить команду по имени
+func (r *TeamRepository) Delete(ctx context.Context, teamName string) error {
+	query := `DELETE FROM teams WHERE name = $1`
+	_, err := r.db.ExecContext(ctx, query, teamName)
 	return err
 }

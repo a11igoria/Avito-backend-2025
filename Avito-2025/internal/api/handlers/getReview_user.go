@@ -7,16 +7,32 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// GetUsersgetReview получить PR, на которых пользователь ревьювер
-func (s *Server) GetUsersgetReview(ctx echo.Context) error {
-	userID := ctx.QueryParam("userid")
+// GetUsersGetReview получить PR, на которых пользователь ревьювер
+func (s *Server) GetUsersGetReview(ctx echo.Context) error {
+	// Получаем параметры из query
+	params := api.GetUsersGetReviewParams{}
+	if err := ctx.Bind(&params); err != nil {
+		return ctx.JSON(http.StatusBadRequest, api.ErrorResponse{
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
+				Code:    "BAD_REQUEST",
+				Message: "invalid query parameters",
+			},
+		})
+	}
 
+	userID := params.UserId
 	// Валидация
 	if userID == "" {
 		return ctx.JSON(http.StatusBadRequest, api.ErrorResponse{
-			Error: api.ErrorResponseError{
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
 				Code:    "BAD_REQUEST",
-				Message: "userid query parameter is required",
+				Message: "user_id query parameter is required",
 			},
 		})
 	}
@@ -25,8 +41,11 @@ func (s *Server) GetUsersgetReview(ctx echo.Context) error {
 	user, err := s.UserService.GetUser(ctx.Request().Context(), userID)
 	if err != nil || user == nil {
 		return ctx.JSON(http.StatusNotFound, api.ErrorResponse{
-			Error: api.ErrorResponseError{
-				Code:    "NOTFOUND",
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
+				Code:    "NOT_FOUND",
 				Message: "user not found",
 			},
 		})
@@ -36,15 +55,18 @@ func (s *Server) GetUsersgetReview(ctx echo.Context) error {
 	prs, err := s.PRService.GetPRsWhereUserIsReviewer(ctx.Request().Context(), userID)
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, api.ErrorResponse{
-			Error: api.ErrorResponseError{
-				Code:    "GET_ERROR",
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
+				Code:    "INTERNAL_ERROR",
 				Message: err.Error(),
 			},
 		})
 	}
 
 	return ctx.JSON(http.StatusOK, map[string]interface{}{
-		"userid":       userID,
-		"pullrequests": prs,
+		"user_id":       userID,
+		"pull_requests": prs,
 	})
 }

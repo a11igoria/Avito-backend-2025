@@ -7,16 +7,19 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// GetTeamget получить информацию о команде по имени
-func (s *Server) GetTeamget(ctx echo.Context) error {
-	teamName := ctx.QueryParam("teamname")
+// GetTeamGet получить информацию о команде по имени
+func (s *Server) GetTeamGet(ctx echo.Context, params api.GetTeamGetParams) error {
+	teamName := params.TeamName
 
 	// Валидация
 	if teamName == "" {
 		return ctx.JSON(http.StatusBadRequest, api.ErrorResponse{
-			Error: api.ErrorResponseError{
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
 				Code:    "BAD_REQUEST",
-				Message: "teamname query parameter is required",
+				Message: "team_name query parameter is required",
 			},
 		})
 	}
@@ -25,8 +28,11 @@ func (s *Server) GetTeamget(ctx echo.Context) error {
 	team, err := s.TeamService.GetTeamByName(ctx.Request().Context(), teamName)
 	if err != nil || team == nil {
 		return ctx.JSON(http.StatusNotFound, api.ErrorResponse{
-			Error: api.ErrorResponseError{
-				Code:    "NOTFOUND",
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
+				Code:    "NOT_FOUND",
 				Message: "team not found",
 			},
 		})

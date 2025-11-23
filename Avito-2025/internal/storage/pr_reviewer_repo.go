@@ -1,9 +1,9 @@
 package storage
 
 import (
-	"avito-2025/internal/domain"
 	"context"
 	"database/sql"
+	"strconv"
 )
 
 type PRReviewerRepository struct {
@@ -14,59 +14,113 @@ func NewPRReviewerRepository(db *sql.DB) *PRReviewerRepository {
 	return &PRReviewerRepository{db: db}
 }
 
-func (r *PRReviewerRepository) AssignReviewer(ctx context.Context, prID int, reviewerID int) error {
-	query := `INSERT INTO pr_reviewers (pr_id, reviewer_id) VALUES ($1, $2)
-              ON CONFLICT (pr_id, reviewer_id) DO NOTHING`
+// AssignReviewer — назначить ревьювера на PR
+func (r *PRReviewerRepository) AssignReviewer(ctx context.Context, prID string, reviewerID string) error {
+	query := `INSERT INTO pr_reviewers (pr_id, reviewer_id, assigned_at) 
+	          VALUES ($1, $2, NOW())
+	          ON CONFLICT (pr_id, reviewer_id) DO NOTHING`
+
 	_, err := r.db.ExecContext(ctx, query, prID, reviewerID)
 	return err
 }
 
-func (r *PRReviewerRepository) ListByPR(ctx context.Context, prID int) ([]*domain.PRReviewer, error) {
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, pr_id, reviewer_id, assigned_at FROM pr_reviewers WHERE pr_id = $1`, prID)
+// GetByPR — получить всех ревьюверов PR по string ID
+func (r *PRReviewerRepository) GetByPR(ctx context.Context, prID string) ([]string, error) {
+	query := `SELECT reviewer_id FROM pr_reviewers WHERE pr_id = $1 ORDER BY assigned_at`
+
+	rows, err := r.db.QueryContext(ctx, query, prID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var reviewers []*domain.PRReviewer
+
+	var reviewerIDs []string
 	for rows.Next() {
-		var rec domain.PRReviewer
-		if err := rows.Scan(&rec.ID, &rec.PRID, &rec.ReviewerID, &rec.AssignedAt); err != nil {
+		var reviewerID string
+		if err := rows.Scan(&reviewerID); err != nil {
 			return nil, err
 		}
-		reviewers = append(reviewers, &rec)
+		reviewerIDs = append(reviewerIDs, reviewerID)
 	}
-	return reviewers, nil
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return reviewerIDs, nil
 }
 
-func (r *PRReviewerRepository) RemoveReviewer(ctx context.Context, prID int, reviewerID int) error {
+// RemoveReviewer — удалить ревьювера с PR
+func (r *PRReviewerRepository) RemoveReviewer(ctx context.Context, prID string, reviewerID string) error {
 	query := `DELETE FROM pr_reviewers WHERE pr_id = $1 AND reviewer_id = $2`
 	_, err := r.db.ExecContext(ctx, query, prID, reviewerID)
 	return err
 }
 
-func (r *PRReviewerRepository) GetReviewersCount(ctx context.Context, prID int) (int, error) {
+// GetReviewersCount — получить количество ревьюверов для PR
+func (r *PRReviewerRepository) GetReviewersCount(ctx context.Context, prID string) (int, error) {
 	query := `SELECT COUNT(*) FROM pr_reviewers WHERE pr_id = $1`
 	var count int
 	err := r.db.QueryRowContext(ctx, query, prID).Scan(&count)
 	return count, err
 }
 
-func (r *PRReviewerRepository) ListByReviewer(ctx context.Context, reviewerID int) ([]*domain.PRReviewer, error) {
-	query := `SELECT id, pr_id, reviewer_id, assigned_at FROM pr_reviewers WHERE reviewer_id = $1`
+// GetPRsByReviewer — получить все PR где юзер ревьювер
+func (r *PRReviewerRepository) GetPRsByReviewer(ctx context.Context, reviewerID string) ([]string, error) {
+	query := `SELECT DISTINCT pr_id FROM pr_reviewers WHERE reviewer_id = $1 ORDER BY pr_id`
+
 	rows, err := r.db.QueryContext(ctx, query, reviewerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var reviewers []*domain.PRReviewer
+	var prIDs []string
 	for rows.Next() {
-		var rec domain.PRReviewer
-		if err := rows.Scan(&rec.ID, &rec.PRID, &rec.ReviewerID, &rec.AssignedAt); err != nil {
+		var prID string
+		if err := rows.Scan(&prID); err != nil {
 			return nil, err
 		}
-		reviewers = append(reviewers, &rec)
+		prIDs = append(prIDs, prID)
 	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return prIDs, nil
+}
+
+// List — получить все связи ревьювер-PR
+func (r *PRReviewerRepository) List(ctx context.Context) ([]map[string]interface{}, error) {
+	query := `SELECT id, pr_id, reviewer_id, assigned_at FROM pr_reviewers ORDER BY id`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reviewers []map[string]interface{}
+	for rows.Next() {
+		var id int
+		var prID, reviewerID string
+		var assignedAt interface{}
+
+		if err := rows.Scan(&id, &prID, &reviewerID, &assignedAt); err != nil {
+			return nil, err
+		}
+
+		reviewers = append(reviewers, map[string]interface{}{
+			"ID":         strconv.Itoa(id),
+			"PRID":       prID,
+			"ReviewerID": reviewerID,
+		})
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return reviewers, nil
 }

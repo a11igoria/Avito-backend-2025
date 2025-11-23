@@ -7,15 +7,16 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// PostTeamadd создание новой команды
-func (s *Server) PostTeamadd(ctx echo.Context) error {
-	var req struct {
-		TeamName string `json:"teamname"`
-	}
+// PostTeamAdd создание новой команды
+func (s *Server) PostTeamAdd(ctx echo.Context) error {
+	var req api.PostTeamAddJSONRequestBody
 
 	if err := ctx.Bind(&req); err != nil {
 		return ctx.JSON(http.StatusBadRequest, api.ErrorResponse{
-			Error: api.ErrorResponseError{
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
 				Code:    "BAD_REQUEST",
 				Message: "invalid request body",
 			},
@@ -25,9 +26,12 @@ func (s *Server) PostTeamadd(ctx echo.Context) error {
 	// Валидация
 	if req.TeamName == "" {
 		return ctx.JSON(http.StatusBadRequest, api.ErrorResponse{
-			Error: api.ErrorResponseError{
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
 				Code:    "BAD_REQUEST",
-				Message: "teamname is required",
+				Message: "team_name is required",
 			},
 		})
 	}
@@ -36,8 +40,11 @@ func (s *Server) PostTeamadd(ctx echo.Context) error {
 	team, err := s.TeamService.CreateTeam(ctx.Request().Context(), req.TeamName)
 	if err != nil {
 		return ctx.JSON(http.StatusConflict, api.ErrorResponse{
-			Error: api.ErrorResponseError{
-				Code:    "TEAMEXISTS",
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
+				Code:    "TEAM_EXISTS",
 				Message: "team already exists",
 			},
 		})

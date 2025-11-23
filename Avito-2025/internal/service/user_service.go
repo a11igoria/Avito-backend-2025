@@ -1,7 +1,7 @@
 package service
 
 import (
-	"avito-2025/internal/domain"
+	"avito-2025/internal/api"
 	"avito-2025/internal/storage"
 	"context"
 	"errors"
@@ -16,62 +16,70 @@ func NewUserService(userRepo *storage.UserRepository, teamRepo *storage.TeamRepo
 	return &UserService{userRepo: userRepo, teamRepo: teamRepo}
 }
 
-// CreateUser — создать пользователя с проверкой команды
-func (s *UserService) CreateUser(ctx context.Context, username string, teamID int) (*domain.User, error) {
-	// Проверяем, существует ли команда
-	team, err := s.teamRepo.GetByID(ctx, teamID)
+// GetUser — получить пользователя по string ID
+func (s *UserService) GetUser(ctx context.Context, userID string) (*api.User, error) {
+	userMap, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, err
-	}
-	if team == nil {
-		return nil, errors.New("team not found")
 	}
 
-	// Создаём пользователя
-	user := &domain.User{
-		Username: username,
-		TeamID:   teamID,
-		IsActive: true,
-	}
-	err = s.userRepo.Create(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-	return user, nil
-}
-
-// GetUser — получить пользователя
-func (s *UserService) GetUser(ctx context.Context, userID int) (*domain.User, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if user == nil {
+	if userMap == nil {
 		return nil, errors.New("user not found")
 	}
-	return user, nil
+
+	// Конвертируем map[string]interface{} в api.User
+	return &api.User{
+		UserId:   userMap["ID"].(string),
+		Username: userMap["Username"].(string),
+		TeamName: userMap["TeamName"].(string),
+		IsActive: userMap["IsActive"].(bool),
+	}, nil
+}
+
+// ActivateUser — активировать пользователя
+func (s *UserService) ActivateUser(ctx context.Context, userID string) error {
+	userMap, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil || userMap == nil {
+		return errors.New("user not found")
+	}
+
+	// Обновляем статус
+	return s.userRepo.Update(ctx, userID, userMap["Username"].(string), true)
 }
 
 // DeactivateUser — деактивировать пользователя
-func (s *UserService) DeactivateUser(ctx context.Context, userID int) error {
-	user, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil || user == nil {
+func (s *UserService) DeactivateUser(ctx context.Context, userID string) error {
+	userMap, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil || userMap == nil {
 		return errors.New("user not found")
 	}
-	user.IsActive = false
-	return s.userRepo.Update(ctx, user)
+
+	// Обновляем статус
+	return s.userRepo.Update(ctx, userID, userMap["Username"].(string), false)
 }
 
-// GetTeamMembers — получить активных членов команды
-func (s *UserService) GetTeamMembers(ctx context.Context, teamID int) ([]*domain.User, error) {
-	members, err := s.userRepo.GetActiveMembers(ctx, teamID)
+// GetTeamMembers — получить активных членов команды по имени
+func (s *UserService) GetTeamMembers(ctx context.Context, teamName string) ([]*api.User, error) {
+	membersSlice, err := s.userRepo.GetActiveMembers(ctx, teamName)
 	if err != nil {
 		return nil, err
 	}
-	return members, nil
-}
 
-// DeleteUser — удалить пользователя
-func (s *UserService) DeleteUser(ctx context.Context, userID int) error {
-	return s.userRepo.Delete(ctx, userID)
+	if len(membersSlice) == 0 {
+		return nil, nil
+	}
+
+	// Конвертируем []map[string]interface{} в []*api.User
+	result := make([]*api.User, 0, len(membersSlice))
+	for _, m := range membersSlice {
+		apiUser := &api.User{
+			UserId:   m["ID"].(string),
+			Username: m["Username"].(string),
+			TeamName: m["TeamName"].(string),
+			IsActive: m["IsActive"].(bool),
+		}
+		result = append(result, apiUser)
+	}
+
+	return result, nil
 }

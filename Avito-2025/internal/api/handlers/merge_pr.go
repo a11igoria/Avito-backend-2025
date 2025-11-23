@@ -7,15 +7,16 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// PostPullrequestmerge мержирование pull request
-func (s *Server) PostPullrequestmerge(ctx echo.Context) error {
-	var req struct {
-		PullRequestID string `json:"pullrequestid"`
-	}
+// PostPullRequestMerge мержирование pull request
+func (s *Server) PostPullRequestMerge(ctx echo.Context) error {
+	var req api.PostPullRequestMergeJSONBody
 
 	if err := ctx.Bind(&req); err != nil {
 		return ctx.JSON(http.StatusBadRequest, api.ErrorResponse{
-			Error: api.ErrorResponseError{
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
 				Code:    "BAD_REQUEST",
 				Message: "invalid request body",
 			},
@@ -23,38 +24,47 @@ func (s *Server) PostPullrequestmerge(ctx echo.Context) error {
 	}
 
 	// Валидация
-	if req.PullRequestID == "" {
+	if req.PullRequestId == "" {
 		return ctx.JSON(http.StatusBadRequest, api.ErrorResponse{
-			Error: api.ErrorResponseError{
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
 				Code:    "BAD_REQUEST",
-				Message: "pullrequestid is required",
+				Message: "pull_request_id is required",
 			},
 		})
 	}
 
 	// Проверяем существование PR
-	pr, err := s.PRService.GetPR(ctx.Request().Context(), req.PullRequestID)
+	pr, err := s.PRService.GetPR(ctx.Request().Context(), req.PullRequestId)
 	if err != nil || pr == nil {
 		return ctx.JSON(http.StatusNotFound, api.ErrorResponse{
-			Error: api.ErrorResponseError{
-				Code:    "NOTFOUND",
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
+				Code:    "NOT_FOUND",
 				Message: "PR not found",
 			},
 		})
 	}
 
 	// Мержим PR
-	err = s.PRService.MergePR(ctx.Request().Context(), req.PullRequestID)
+	err = s.PRService.MergePR(ctx.Request().Context(), req.PullRequestId)
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, api.ErrorResponse{
-			Error: api.ErrorResponseError{
-				Code:    "MERGE_ERROR",
+			Error: struct {
+				Code    api.ErrorResponseErrorCode `json:"code"`
+				Message string                     `json:"message"`
+			}{
+				Code:    "INTERNAL_ERROR",
 				Message: err.Error(),
 			},
 		})
 	}
 
 	// Возвращаем обновленный PR
-	updatedPR, _ := s.PRService.GetPR(ctx.Request().Context(), req.PullRequestID)
+	updatedPR, _ := s.PRService.GetPR(ctx.Request().Context(), req.PullRequestId)
 	return ctx.JSON(http.StatusOK, updatedPR)
 }
